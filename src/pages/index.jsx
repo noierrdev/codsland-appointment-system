@@ -2,7 +2,7 @@ import { Calendar, momentLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import moment from 'moment'
 import { Button, Grid, InputAdornment, TextField } from '@mui/material'
-import { CardTravelOutlined, EmailOutlined, Event, LocationOn, PersonOutlined, PhoneOutlined, TextsmsOutlined } from '@mui/icons-material'
+import { CardTravelOutlined, EmailOutlined, Event, LocationOn, PersonOutlined, PhoneOutlined, TextsmsOutlined, TimerOutlined } from '@mui/icons-material'
 import Confirm from '../components/general/Confirm'
 import { useState } from 'react'
 import {Elements,PaymentElement,useElements,useStripe} from '@stripe/react-stripe-js';
@@ -10,7 +10,8 @@ import {loadStripe} from '@stripe/stripe-js';
 import { useEffect } from 'react'
 import axios from 'axios'
 import { BACKEND_URL } from '../Configs'
-import { useRef } from 'react'
+import React,{ useRef } from 'react'
+import { useSnackbar } from 'notistack'
 
 const stripePromise = loadStripe('pk_test_51OVOQtFhFnxnoDMRquya5UT74vYR3BcJFVk79wFhtcXg3hgvyM44n9papYedTEXyoIqqYZWFKBGkfxTampbb7sG400RmgjkKoR');
 const localizer = momentLocalizer(moment)
@@ -47,6 +48,7 @@ const CheckoutForm=()=>{
     )
 }
 export default function(props){
+    const snackbar=useSnackbar()
     const [AskSave,setAskSave]=useState(false);
     const [PaymentIntent,setPaymentIntent]=useState(null);
     const refFullname=useRef(null);
@@ -54,7 +56,11 @@ export default function(props){
     const refPhonenumber=useRef(null)
     const refLocation=useRef(null);
     const refDescription=useRef(null);
-    const refEvent=useRef(null)
+    const refEvent=useRef(null);
+
+    const [Events,setEvents]=React.useState([]);
+    const [ViewEvent,setViewEvent]=React.useState(null);
+    const [BackgroundEvents,setBackgroundEvents]=React.useState([])
     
     const startSaving=()=>{
         axios.post(`${BACKEND_URL}/appointments/start-payment`,{
@@ -66,6 +72,62 @@ export default function(props){
             }
         })
     }
+    const getEvents=(e)=>{
+        setEvents([])
+        axios.post(`${BACKEND_URL}/appointments/calendar`,{
+            range:e
+        },{
+            headers:{
+                token:sessionStorage.getItem('token')
+            }
+        })
+        .then(response=>{
+            if(response.data.status=="success"){
+                // setEvents([...response.data.data])
+                var events_list=[];
+                response.data.data.appointments.forEach(event => {
+                    const fromDate=new Date(event.from);
+                    const toDate=new Date(event.to);
+                    const fromHour=String(fromDate.getHours()).padStart(2, '0');
+                    const fromMinutes=String(fromDate.getMinutes()).padStart(2, '0');
+                    const fromTime=`${fromHour}:${fromMinutes}`;
+                    const toHour=String(toDate.getHours()).padStart(2, '0');
+                    const toMinutes=String(toDate.getMinutes()).padStart(2, '0');
+                    const toTime=`${toHour}:${toMinutes}`;
+                    events_list.push({
+                        start:fromDate,
+                        end:toDate,
+                        title:<div title="" style={{display:"flex",alignItems:"center",backgroundColor:"white",color:"black"}} >{event.user.fullname} {fromTime}-{toTime} {event.accepted?<Check color='primary' />:<TimerOutlined color='secondary' />}</div>,
+                        resource:event
+                    })
+                });
+                const backgroundEvents=[];
+                response.data.data.events.forEach(event=>{
+                    const start_date=new Date(event.start_date);
+                    const end_date=new Date(event.end_date);
+                    const start_hour=Math.floor(Number(event.start_time));
+                    const end_hour=Math.floor(Number(event.end_time));
+                    const start_min=(Number(event.start_time)-start_hour)*60;
+                    const end_min=(Number(event.end_time)-end_hour)*60;
+                    var current_date=start_date;
+                    var eventTimes=[];
+                    while (current_date<end_date) {
+                        eventTimes.push({
+                            title:event.title,
+                            start: new Date(current_date.getFullYear(),current_date.getMonth(),current_date.getDate(),start_hour,start_min),
+                            end: new Date(current_date.getFullYear(),current_date.getMonth(),current_date.getDate(),end_hour,end_min),
+                        });
+                        current_date.setDate(current_date.getDate()+1)
+                    }
+                    backgroundEvents.push(...eventTimes)
+                })
+                setEvents([
+                    ...events_list,
+                ])
+                setBackgroundEvents([...backgroundEvents])
+            }
+        })
+    }
     
     return (
         <>
@@ -73,10 +135,11 @@ export default function(props){
             <Grid item lg={6} sm={12} md={12}  >
                 <Calendar
                 localizer={localizer}
+                backgroundEvents={BackgroundEvents}
                 startAccessor="start"
                 endAccessor="end"
                 style={{ height: 500 }}
-                onRangeChange={e=>console.log(e)}
+                onRangeChange={getEvents}
                 />
             </Grid>
             <Grid item lg={6} sm={12} md={12} >
@@ -89,7 +152,7 @@ export default function(props){
                 inputRef={refEvent}
                 InputProps={{
                     startAdornment:(
-                    <InputAdornment>
+                    <InputAdornment position="start">
                         <Event/>
                     </InputAdornment>
                     )
@@ -118,7 +181,7 @@ export default function(props){
                 margin='normal'
                 InputProps={{
                     startAdornment:(
-                    <InputAdornment>
+                    <InputAdornment position="start">
                         <EmailOutlined/>
                     </InputAdornment>
                     )
@@ -132,7 +195,8 @@ export default function(props){
                 label="Your Phone"
                 margin='normal'
                 InputProps={{
-                    startAdornment:(<InputAdornment>
+                    startAdornment:(
+                    <InputAdornment position="start">
                         <PhoneOutlined/>
                     </InputAdornment>)
 
@@ -145,7 +209,7 @@ export default function(props){
                 label="Your Location"
                 margin='normal'
                 InputProps={{
-                    startAdornment:(<InputAdornment>
+                    startAdornment:(<InputAdornment position="start">
                         <LocationOn/>
                     </InputAdornment>)
 
